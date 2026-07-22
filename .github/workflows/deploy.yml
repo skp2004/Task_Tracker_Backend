@@ -1,0 +1,89 @@
+name: Java CI/CD with Maven and EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout the source code
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. Set up JDK 21 (Temurin distribution)
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: 'maven'
+
+    # 3. Build the JAR file (running in the repository root)
+    - name: Build with Maven
+      run: mvn clean package -DskipTests
+
+    # 4. Copy the JAR file to your EC2 instance
+    - name: Copy JAR to EC2 via SCP
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ec2-user
+        key: ${{ secrets.VM_SECRET }}
+        source: "target/tasktracker-backend-1.0.0.jar"
+        target: "/home/ec2-user/tasktracker"
+        strip_components: 1 # Strips the 'target' directory so the JAR is placed directly in '/tasktracker'
+
+    # 5. Connect via SSH to restart the application
+    - name: Restart Application on EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ec2-user
+        key: ${{ secrets.VM_SECRET }}
+        script: |
+          # Create target log/app directory if they don't exist
+          mkdir -p /home/ec2-user/tasktracker
+
+          # Find and stop the currently running Spring Boot app process
+          echo "Stopping existing TaskTracker service..."
+          PID=$(jps -l | grep 'tasktracker-backend-1.0.0.jar' | cut -d' ' -f1 || true)
+          if [ -n "$PID" ]; then
+            kill -15 $PID
+            # Wait up to 10 seconds for the process to exit gracefully
+            for i in {1..10}; do
+              if ! ps -p $PID > /dev/null; then break; fi
+              sleep 1
+            done
+            # Force kill if still running
+            if ps -p $PID > /dev/null; then
+              kill -9 $PID
+            fi
+          fi
+
+          # Load environment variables from the secrets file
+          if [ -f /home/ec2-user/tasktracker/secrets/tasktracker.env ]; then
+            echo "Loading environment variables from tasktracker.env..."
+            set -a
+            source /home/ec2-user/tasktracker/secrets/tasktracker.env
+            set +a
+          else
+            echo "Warning: tasktracker.env file not found at /home/ec2-user/tasktracker/secrets/"
+          fi
+
+          # Start the new JAR file in the background, redirecting logs to app.log
+          echo "Starting the new version..."
+          nohup java -jar /home/ec2-user/tasktracker/tasktracker-backend-1.0.0.jar \
+            --spring.profiles.active=prod \
+            > /home/ec2-user/tasktracker/app.log 2>&1 &
+
+          # Short wait and check if the process started successfully
+          sleep 3
+          if jps -l | grep 'tasktracker-backend-1.0.0.jar' > /dev/null; then
+            echo "TaskTracker Spring Boot app started successfully!"
+          else
+            echo "Failed to start TaskTracker app. Check /home/ec2-user/tasktracker/app.log for details."
+            exit 1
+          fi
