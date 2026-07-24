@@ -1,13 +1,12 @@
 services:
   - type: web
     name: tasktracker-backend
-    runtime: java
-    buildCommand: ./mvnw clean package -DskipTests
-    startCommand: java -Dserver.port=$PORT -Dspring.profiles.active=prod -jar target/tasktracker-backend-1.0.0.jar
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
       - key: DB_URL
-        sync: false
+        sync: false          # Set manually in Render dashboard — no secrets in git
       - key: DB_USERNAME
         sync: false
       - key: DB_PASSWORD
