@@ -7,9 +7,6 @@ WORKDIR /build
 
 # Copy dependency descriptors first — leverage Docker layer cache
 COPY pom.xml .
-COPY .mvn/ .mvn/
-COPY mvnw .
-RUN chmod +x mvnw
 
 # Download all dependencies (cached unless pom.xml changes)
 RUN mvn dependency:go-offline -q
@@ -29,7 +26,6 @@ WORKDIR /app
 COPY --from=builder /build/target/tasktracker-backend-1.0.0.jar app.jar
 
 # Render injects $PORT at runtime; Spring Boot reads -Dserver.port
-# Default 8080 is the Render Docker default
 EXPOSE 8080
 
 ENTRYPOINT ["java", \
