@@ -1,4 +1,6 @@
 server:
+  # Render injects $PORT at runtime via -Dserver.port=$PORT in startCommand.
+  # Default 10000 matches Render's internal port; 8081 used locally.
   port: ${SERVER_PORT:8081}
 
 spring:
@@ -29,9 +31,12 @@ spring:
         jdbc:
           time_zone: UTC
 
-  # Flyway disabled to avoid baseline history table conflicts in Supabase
+  # Flyway: enabled with baseline so existing tables/data are not re-created,
+  # only the missing indexes from V1__task_tracker_schema.sql are applied.
   flyway:
-    enabled: false
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
 
 # Springdoc / Swagger
 springdoc:
@@ -48,6 +53,7 @@ app:
     access-token-expiration-ms: 900000        # 15 minutes
     refresh-token-expiration-ms: 604800000    # 7 days
   cors:
+    # Comma-separated origins — read by SecurityConfig.corsConfigurationSource()
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8081,http://localhost:3000}
 
 # Logging

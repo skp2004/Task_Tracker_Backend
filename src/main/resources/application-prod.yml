@@ -14,12 +14,12 @@ spring:
     show-sql: false   # hide SQL logs in production
 
   flyway:
-    enabled: false
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
 
-app:
-  cors:
-    # Allow the Expo Go / built APK origins in production
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+  # CORS — origins are configured in application.yml (read by SecurityConfig)
+  # Override via CORS_ALLOWED_ORIGINS env var if needed
 
 logging:
   level:

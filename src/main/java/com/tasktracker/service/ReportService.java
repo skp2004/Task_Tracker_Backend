@@ -89,161 +89,190 @@ public class ReportService {
             long inProgress = tasks.stream().filter(t -> t.getStatus() == TaskStatus.IN_PROGRESS).count();
             long todo = tasks.stream().filter(t -> t.getStatus() == TaskStatus.TODO).count();
 
-            PDPage page = new PDPage(PDRectangle.A4);
-            doc.addPage(page);
-
-            PDType1Font fontBold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+            PDType1Font fontBold    = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
             PDType1Font fontRegular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
             PDType1Font fontOblique = new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE);
 
-            try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-                float y = PAGE_HEIGHT - MARGIN;
+            // ── Page 1 ──────────────────────────────────────────────────
+            PDPage firstPage = new PDPage(PDRectangle.A4);
+            doc.addPage(firstPage);
 
-                // ── Header ──────────────────────────────────────
-                cs.setNonStrokingColor(0.24f, 0.18f, 0.56f); // purple
-                cs.addRect(0, PAGE_HEIGHT - 80, PAGE_WIDTH, 80);
+            // Use a single-element array so we can reassign inside lambdas / loops
+            PDPageContentStream[] csRef = { new PDPageContentStream(doc, firstPage) };
+            PDPageContentStream cs = csRef[0];
+            float[] yRef = { PAGE_HEIGHT - MARGIN };
+
+            // ── Header ──────────────────────────────────────────────────
+            cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
+            cs.addRect(0, PAGE_HEIGHT - 80, PAGE_WIDTH, 80);
+            cs.fill();
+
+            cs.setNonStrokingColor(1f, 1f, 1f);
+            cs.beginText();
+            cs.setFont(fontBold, 18);
+            cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 45);
+            cs.showText(reportTitle);
+            cs.endText();
+
+            cs.beginText();
+            cs.setFont(fontRegular, 10);
+            cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 65);
+            cs.showText("Generated on " + LocalDate.now().format(DISPLAY_DATE));
+            cs.endText();
+
+            yRef[0] = PAGE_HEIGHT - 110;
+
+            // ── User Info ────────────────────────────────────────────────
+            cs.setNonStrokingColor(0f, 0f, 0f);
+            cs.beginText();
+            cs.setFont(fontBold, 11);
+            cs.newLineAtOffset(MARGIN, yRef[0]);
+            cs.showText("User: " + user.getFullName() + "   |   Email: " + user.getEmail()
+                    + (user.getPhone() != null ? "   |   Phone: " + user.getPhone() : ""));
+            cs.endText();
+
+            yRef[0] -= 25;
+
+            // ── Summary Bar ──────────────────────────────────────────────
+            cs.setNonStrokingColor(0.95f, 0.95f, 0.95f);
+            cs.addRect(MARGIN, yRef[0] - 40, PAGE_WIDTH - 2 * MARGIN, 45);
+            cs.fill();
+
+            cs.setNonStrokingColor(0f, 0f, 0f);
+            cs.beginText();
+            cs.setFont(fontBold, 10);
+            cs.newLineAtOffset(MARGIN + 10, yRef[0] - 15);
+            cs.showText(String.format("Total: %d   |   Done: %d   |   In Progress: %d   |   To Do: %d",
+                    total, done, inProgress, todo));
+            cs.endText();
+
+            yRef[0] -= 65;
+
+            // ── Helper: draw column header row ───────────────────────────
+            drawTableHeader(cs, fontBold, yRef[0]);
+            yRef[0] -= 25;
+
+            // ── Task Rows ────────────────────────────────────────────────
+            boolean alt = false;
+            for (Map.Entry<LocalDate, List<Task>> entry : byDate.entrySet()) {
+                LocalDate date = entry.getKey();
+                List<Task> dayTasks = entry.getValue();
+
+                // Check space before drawing the day header (14px height)
+                if (yRef[0] < MARGIN + 30) {
+                    cs.close();
+                    cs = addNewPage(doc, fontBold, yRef);
+                    alt = false;
+                }
+
+                // Day header
+                cs.setNonStrokingColor(0.88f, 0.85f, 0.97f);
+                cs.addRect(MARGIN, yRef[0] - 3, PAGE_WIDTH - 2 * MARGIN, 14);
                 cs.fill();
 
-                cs.setNonStrokingColor(1f, 1f, 1f);
-                cs.beginText();
-                cs.setFont(fontBold, 18);
-                cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 45);
-                cs.showText(reportTitle);
-                cs.endText();
-
-                cs.beginText();
-                cs.setFont(fontRegular, 10);
-                cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 65);
-                cs.showText("Generated on " + LocalDate.now().format(DISPLAY_DATE));
-                cs.endText();
-
-                y = PAGE_HEIGHT - 110;
-
-                // ── User Info ───────────────────────────────────
-                cs.setNonStrokingColor(0f, 0f, 0f);
-                cs.beginText();
-                cs.setFont(fontBold, 11);
-                cs.newLineAtOffset(MARGIN, y);
-                cs.showText("User: " + user.getFullName() + "   |   Email: " + user.getEmail()
-                        + (user.getPhone() != null ? "   |   Phone: " + user.getPhone() : ""));
-                cs.endText();
-
-                y -= 25;
-
-                // ── Summary ─────────────────────────────────────
-                cs.setNonStrokingColor(0.95f, 0.95f, 0.95f);
-                cs.addRect(MARGIN, y - 40, PAGE_WIDTH - 2 * MARGIN, 45);
-                cs.fill();
-
-                cs.setNonStrokingColor(0f, 0f, 0f);
-                cs.beginText();
-                cs.setFont(fontBold, 10);
-                cs.newLineAtOffset(MARGIN + 10, y - 15);
-                cs.showText(String.format("Total: %d   |   Done: %d   |   In Progress: %d   |   To Do: %d",
-                        total, done, inProgress, todo));
-                cs.endText();
-
-                y -= 65;
-
-                // ── Task Table Header ────────────────────────────
                 cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
-                cs.addRect(MARGIN, y - 5, PAGE_WIDTH - 2 * MARGIN, 20);
-                cs.fill();
-
-                cs.setNonStrokingColor(1f, 1f, 1f);
                 cs.beginText();
-                cs.setFont(fontBold, 9);
-                cs.newLineAtOffset(MARGIN + 5, y + 3);
-                cs.showText("DATE");
-                cs.newLineAtOffset(80, 0);
-                cs.showText("TITLE");
-                cs.newLineAtOffset(220, 0);
-                cs.showText("STATUS");
-                cs.newLineAtOffset(70, 0);
-                cs.showText("PRIORITY");
-                cs.newLineAtOffset(60, 0);
-                cs.showText("CATEGORY");
+                cs.setFont(fontBold, 8);
+                cs.newLineAtOffset(MARGIN + 5, yRef[0] + 4);
+                cs.showText(date.format(DISPLAY_DATE));
                 cs.endText();
 
-                y -= 25;
+                yRef[0] -= 18;
 
-                boolean alt = false;
-                for (Map.Entry<LocalDate, List<Task>> entry : byDate.entrySet()) {
-                    LocalDate date = entry.getKey();
-                    List<Task> dayTasks = entry.getValue();
-
-                    // Day header
-                    cs.setNonStrokingColor(0.88f, 0.85f, 0.97f);
-                    cs.addRect(MARGIN, y - 3, PAGE_WIDTH - 2 * MARGIN, 14);
-                    cs.fill();
-
-                    cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
-                    cs.beginText();
-                    cs.setFont(fontBold, 8);
-                    cs.newLineAtOffset(MARGIN + 5, y + 4);
-                    cs.showText(date.format(DISPLAY_DATE));
-                    cs.endText();
-
-                    y -= 18;
-
-                    for (Task t : dayTasks) {
-                        if (alt) {
-                            cs.setNonStrokingColor(0.98f, 0.98f, 0.98f);
-                            cs.addRect(MARGIN, y - 3, PAGE_WIDTH - 2 * MARGIN, 13);
-                            cs.fill();
-                        }
-                        alt = !alt;
-
-                        cs.setNonStrokingColor(0f, 0f, 0f);
-                        cs.beginText();
-                        cs.setFont(fontRegular, 8);
-                        cs.newLineAtOffset(MARGIN + 85, y + 4);
-                        String title = t.getTitle().length() > 38 ? t.getTitle().substring(0, 35) + "..." : t.getTitle();
-                        cs.showText(title);
-                        cs.newLineAtOffset(220, 0);
-                        cs.showText(t.getStatus().name());
-                        cs.newLineAtOffset(70, 0);
-                        cs.showText(t.getPriority().name());
-                        cs.newLineAtOffset(60, 0);
-                        cs.showText(t.getCategory() != null ? t.getCategory() : "—");
-                        cs.endText();
-
-                        y -= 15;
-
-                        if (y < MARGIN + 50) {
-                            cs.close();
-                            PDPage newPage = new PDPage(PDRectangle.A4);
-                            doc.addPage(newPage);
-                            // Note: in production you'd re-open content stream on new page
-                            break;
-                        }
+                for (Task t : dayTasks) {
+                    // Check space before each task row (15px height)
+                    if (yRef[0] < MARGIN + 20) {
+                        cs.close();
+                        cs = addNewPage(doc, fontBold, yRef);
+                        alt = false;
                     }
-                }
 
-                if (tasks.isEmpty()) {
-                    cs.setNonStrokingColor(0.5f, 0.5f, 0.5f);
+                    if (alt) {
+                        cs.setNonStrokingColor(0.98f, 0.98f, 0.98f);
+                        cs.addRect(MARGIN, yRef[0] - 3, PAGE_WIDTH - 2 * MARGIN, 13);
+                        cs.fill();
+                    }
+                    alt = !alt;
+
+                    cs.setNonStrokingColor(0f, 0f, 0f);
                     cs.beginText();
-                    cs.setFont(fontOblique, 11);
-                    cs.newLineAtOffset(MARGIN, y);
-                    cs.showText("No tasks found for the selected period.");
+                    cs.setFont(fontRegular, 8);
+                    cs.newLineAtOffset(MARGIN + 85, yRef[0] + 4);
+                    String title = t.getTitle().length() > 38 ? t.getTitle().substring(0, 35) + "..." : t.getTitle();
+                    cs.showText(title);
+                    cs.newLineAtOffset(220, 0);
+                    cs.showText(t.getStatus().name());
+                    cs.newLineAtOffset(70, 0);
+                    cs.showText(t.getPriority().name());
+                    cs.newLineAtOffset(60, 0);
+                    cs.showText(t.getCategory() != null ? t.getCategory() : "—");
                     cs.endText();
-                }
 
-                // ── Footer ──────────────────────────────────────
-                cs.setNonStrokingColor(0.6f, 0.6f, 0.6f);
+                    yRef[0] -= 15;
+                }
+            }
+
+            if (tasks.isEmpty()) {
+                cs.setNonStrokingColor(0.5f, 0.5f, 0.5f);
                 cs.beginText();
-                cs.setFont(fontRegular, 8);
-                cs.newLineAtOffset(MARGIN, 30);
-                cs.showText("TaskTracker — Confidential | " + from.format(DISPLAY_DATE) + " to " + to.format(DISPLAY_DATE));
+                cs.setFont(fontOblique, 11);
+                cs.newLineAtOffset(MARGIN, yRef[0]);
+                cs.showText("No tasks found for the selected period.");
                 cs.endText();
             }
 
+            // ── Footer on last page ──────────────────────────────────────
+            cs.setNonStrokingColor(0.6f, 0.6f, 0.6f);
+            cs.beginText();
+            cs.setFont(fontRegular, 8);
+            cs.newLineAtOffset(MARGIN, 30);
+            cs.showText("TaskTracker — Confidential | " + from.format(DISPLAY_DATE) + " to " + to.format(DISPLAY_DATE));
+            cs.endText();
+
+            cs.close(); // close the last open stream
+
             doc.save(baos);
-            log.info("PDF report generated for user {} — {} tasks", user.getId(), tasks.size());
+            log.info("PDF report generated for user {} — {} tasks, {} pages",
+                    user.getId(), tasks.size(), doc.getNumberOfPages());
             return baos.toByteArray();
 
         } catch (IOException e) {
             throw new RuntimeException("Failed to generate PDF report", e);
         }
+    }
+
+    /** Opens a new page, resets y to top margin, redraws the column header row. */
+    private PDPageContentStream addNewPage(PDDocument doc, PDType1Font fontBold,
+                                           float[] yRef) throws IOException {
+        PDPage newPage = new PDPage(PDRectangle.A4);
+        doc.addPage(newPage);
+        PDPageContentStream newCs = new PDPageContentStream(doc, newPage);
+        yRef[0] = PAGE_HEIGHT - MARGIN;
+        drawTableHeader(newCs, fontBold, yRef[0]);
+        yRef[0] -= 25;
+        return newCs;
+    }
+
+    /** Draws the purple column header row at the given y position. */
+    private void drawTableHeader(PDPageContentStream cs, PDType1Font fontBold,
+                                  float y) throws IOException {
+        cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
+        cs.addRect(MARGIN, y - 5, PAGE_WIDTH - 2 * MARGIN, 20);
+        cs.fill();
+
+        cs.setNonStrokingColor(1f, 1f, 1f);
+        cs.beginText();
+        cs.setFont(fontBold, 9);
+        cs.newLineAtOffset(MARGIN + 5, y + 3);
+        cs.showText("DATE");
+        cs.newLineAtOffset(80, 0);
+        cs.showText("TITLE");
+        cs.newLineAtOffset(220, 0);
+        cs.showText("STATUS");
+        cs.newLineAtOffset(70, 0);
+        cs.showText("PRIORITY");
+        cs.newLineAtOffset(60, 0);
+        cs.showText("CATEGORY");
+        cs.endText();
     }
 }

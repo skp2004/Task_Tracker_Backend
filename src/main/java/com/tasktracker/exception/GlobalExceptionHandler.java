@@ -1,6 +1,7 @@
 package com.tasktracker.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -14,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -21,7 +23,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<?> handleValidation(MethodArgumentNotValidException ex,
-                                               HttpServletRequest req) {
+                                              HttpServletRequest req) {
         Map<String, String> errors = new HashMap<>();
         ex.getBindingResult().getAllErrors().forEach(err -> {
             String field = err instanceof FieldError fe ? fe.getField() : err.getObjectName();
@@ -54,7 +56,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(BadCredentialsException ex,
-                                                               HttpServletRequest req) {
+                                                              HttpServletRequest req) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ErrorResponse(401, "Unauthorized", "Invalid email or password",
                         req.getRequestURI(), OffsetDateTime.now()));
@@ -62,16 +64,23 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex,
-                                                             HttpServletRequest req) {
+                                                            HttpServletRequest req) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ErrorResponse(403, "Forbidden", ex.getMessage(),
+                .body(new ErrorResponse(403, "Forbidden", "Access denied",
                         req.getRequestURI(), OffsetDateTime.now()));
     }
 
+    /**
+     * Catch-all handler — logs the full exception server-side, returns a GENERIC
+     * message to the client so internal details (stack traces, DB messages, etc.)
+     * are never exposed over the wire.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAll(Exception ex, HttpServletRequest req) {
+        log.error("Unhandled exception on {}: {}", req.getRequestURI(), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse(500, "Internal Server Error", ex.getMessage(),
+                .body(new ErrorResponse(500, "Internal Server Error",
+                        "An unexpected error occurred. Please try again later.",
                         req.getRequestURI(), OffsetDateTime.now()));
     }
 }

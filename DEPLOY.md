@@ -1,59 +1,93 @@
-# TaskTracker Backend — GitHub Secrets Setup
+# TaskTracker — Deployment Guide
 
-## Required Secrets (Settings → Secrets and variables → Actions)
+> **⚠️ TEMPLATE ONLY. Never put real credentials here.**
+> All secrets are set in the Render dashboard (Environment Variables) — never in git.
 
-| Secret Name | Value |
-|-------------|-------|
-| `VM_HOST` | `54.79.100.142` |
-| `VM_SECRET` | Contents of `smartTools.pem` key file |
+---
 
-## Env file on EC2 Server
+## 🚀 Hosting on Render (Current Setup)
 
-SSH into the server and create the env file **once**:
+TaskTracker backend is now hosted on **Render.com** using the `render.yaml` blueprint in this repo.
 
-```bash
-ssh -i smartTools.pem ec2-user@54.79.100.142
+### One-time Setup on Render
+1. Go to [render.com](https://render.com) → **New** → **Blueprint**
+2. Connect your GitHub repo → select `main` branch
+3. Render will detect `render.yaml` and configure the service automatically
+4. Set the following **Environment Variables** in the Render dashboard:
 
-# Create secrets directory
-mkdir -p ~/tasktracker/secrets
+```
+DB_URL        = jdbc:postgresql://<host>:5432/postgres?sslmode=require&options=endpoint%3D<id>
+DB_USERNAME   = <from-supabase>
+DB_PASSWORD   = <from-supabase>
+JWT_SECRET    = <generate: openssl rand -base64 48>
+```
 
-# Create the env file
-cat > ~/tasktracker/secrets/tasktracker.env << 'EOF'
-DB_URL=jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require&options=endpoint%3Dtjtqnxuuvaeaemwrumky
-DB_USERNAME=postgres.tjtqnxuuvaeaemwrumky
-DB_PASSWORD=Skpatel@1604
-JWT_SECRET=TaskTracker$ecretK3y!9f2mXqR8pL7nV5sYwD4jA6hC1bG0eI3uO
-CORS_ALLOWED_ORIGINS=*
+### Auto-Deploy
+Every push to `main` triggers Render to rebuild and redeploy automatically.
+No SSH keys, EC2 instances, or systemd involved.
+
+### Health Check
+Render monitors: `GET /api/health` → should return `{"status":"UP"}`
+
+---
+
+## 💻 Running Locally (Development)
+
+Create a `.env` file in the `backend/` directory (already in `.gitignore`):
+
+```env
+DB_URL=jdbc:postgresql://<host>:5432/postgres?sslmode=require&options=endpoint%3D<id>
+DB_USERNAME=<from-supabase>
+DB_PASSWORD=<from-supabase>
+JWT_SECRET=<generate-with-openssl-rand>
+CORS_ALLOWED_ORIGINS=http://localhost:8081,http://localhost:3000
 SERVER_PORT=8081
-EOF
 ```
 
-## How CI/CD Works
-
-1. **Push to `main`** → GitHub Actions triggers
-2. **Build** → Maven builds `tasktracker-backend-1.0.0.jar`
-3. **SCP** → JAR is copied to `/home/ec2-user/tasktracker/`
-4. **SSH** → Old process is gracefully stopped, new JAR started with `--spring.profiles.active=prod`
-5. **Verify** → Health check confirms process is running
-
-## Local vs Production
-
-| Setting | Local | Production |
-|---------|-------|-----------|
-| `API_BASE_URL` (mobile) | `http://192.168.9.3:8081` | `http://54.79.100.142:8081` |
-| Spring profile | default | `prod` |
-| SQL logging | `true` | `false` |
-| CORS origins | localhost only | `*` |
-
-## Update Mobile App for Production
-
-In `mobile-app/constants/api.ts`, update the prod URL:
-```ts
-const PROD_BASE_URL = 'http://54.79.100.142:8081';
+Then run:
+```bash
+cd backend
+./mvnw spring-boot:run
 ```
 
-## View Logs
+Swagger UI → http://localhost:8081/swagger-ui.html
+
+---
+
+## 🔄 Rotating Credentials
+
+1. **Supabase DB password**: Supabase Dashboard → Project Settings → Database → Reset password → update on Render dashboard.
+2. **JWT secret**: Generate new value (`openssl rand -base64 48`) → update on Render dashboard → Render auto-redeploys. All sessions invalidated.
+
+---
+
+## 🗑️ AWS EC2 Cleanup (Previous Hosting)
+
+TaskTracker was previously hosted on AWS EC2. To clean up the old server:
 
 ```bash
-ssh -i smartTools.pem ec2-user@54.79.100.142 'tail -f ~/tasktracker/app.log'
+# SSH into your EC2 instance
+ssh -i your-key.pem ec2-user@54.79.100.142
+
+# Stop and disable the systemd service
+sudo systemctl stop tasktracker
+sudo systemctl disable tasktracker
+
+# Remove the service file
+sudo rm /etc/systemd/system/tasktracker.service
+sudo systemctl daemon-reload
+
+# Remove the application files
+rm -rf ~/tasktracker
+
+# Remove Nginx config (if no other apps use it)
+sudo rm /etc/nginx/conf.d/tasktracker.conf
+sudo nginx -t && sudo systemctl reload nginx
+
+# Optionally revoke the Let's Encrypt cert
+sudo certbot delete --cert-name api-tasktracker.duckdns.org
 ```
+
+Then from the **AWS Console**:
+- Remove inbound rule for port 8081 in the EC2 Security Group
+- If this EC2 instance has no other purpose, you can terminate it
