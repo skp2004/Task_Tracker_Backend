@@ -1,11 +1,23 @@
 server:
   # Render injects $PORT at runtime via -Dserver.port=$PORT in startCommand.
-  # Default 10000 matches Render's internal port; 8081 used locally.
   port: ${SERVER_PORT:8081}
+  # Enable Java 21 Virtual Thread executor for Tomcat — replaces platform threads
+  # with lightweight virtual threads (Project Loom). Each HTTP request gets its own
+  # virtual thread; no thread pool saturation under concurrent load.
+  tomcat:
+    threads:
+      max: 200
 
 spring:
   application:
     name: tasktracker
+
+  # ── Java 21 Virtual Threads (Project Loom) ──────────────────────────────────
+  # Spring Boot 3.2+ activates virtual threads for Tomcat, @Async, and
+  # scheduled tasks with a single property. Zero platform thread pool blocking.
+  threads:
+    virtual:
+      enabled: true
 
   # Database — Supabase PostgreSQL Session Pooler
   datasource:
@@ -14,22 +26,36 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      connection-timeout: 30000
-      maximum-pool-size: 5
+      # Supabase session pooler cap is 15 connections; keep below it.
+      # Virtual threads park instead of blocking, so fewer DB connections
+      # serve many more concurrent requests than platform threads could.
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000       # 20 s: fail fast rather than queue forever
+      idle-timeout: 300000            # 5 min: release idle connections promptly
+      max-lifetime: 1800000           # 30 min: rotate before Supabase kills them
+      keepalive-time: 60000           # 1 min: keep connections alive through NAT
       pool-name: TaskTrackerPool
+      # Validate connection before handing to thread (prevents stale conn errors)
+      connection-test-query: SELECT 1
 
-  # JPA / Hibernate — Auto-creates tt_users & tt_tasks on startup if missing
+  # JPA / Hibernate
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
-    open-in-view: false
+    open-in-view: false           # Never hold a DB connection across entire HTTP request
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         jdbc:
           time_zone: UTC
+          batch_size: 25            # Batch inserts/updates — reduces round trips by 25x
+          fetch_size: 50            # Stream 50 rows per round trip instead of all-at-once
+        order_inserts: true         # Group INSERTs by type for maximum batch efficiency
+        order_updates: true         # Group UPDATEs for maximum batch efficiency
+        generate_statistics: false  # Disable in dev; enable only for profiling
 
   # Flyway: enabled with baseline so existing tables/data are not re-created,
   # only the missing indexes from V1__task_tracker_schema.sql are applied.

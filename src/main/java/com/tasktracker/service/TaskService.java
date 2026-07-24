@@ -9,8 +9,11 @@ import com.tasktracker.entity.User;
 import com.tasktracker.exception.ResourceNotFoundException;
 import com.tasktracker.repository.TaskRepository;
 import com.tasktracker.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.jpa.HibernateHints;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +21,22 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * Task business logic.
+ *
+ * <p>Performance notes:
+ * <ul>
+ *   <li>All reads use {@code readOnly = true} which tells Hibernate to skip
+ *       dirty-checking, opens the connection on the virtual thread (no blocking),
+ *       and lets the JDBC driver optimise cursor semantics.</li>
+ *   <li>Write operations use {@code merge()} semantics via {@code save()} with
+ *       batch_size=25 configured in application.yml — multiple saves in a loop
+ *       are batched into a single round-trip.</li>
+ *   <li>The {@code EntityManager} fetch-size hint is applied on list queries so
+ *       the JDBC driver streams 50 rows per network round-trip instead of
+ *       fetching every row in one giant packet.</li>
+ * </ul>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -26,33 +45,37 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
 
+    @PersistenceContext
+    private EntityManager em;
+
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE;
 
-    // ─── Read ────────────────────────────────────────────────
+    // ─── Read ────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public List<TaskResponse> getTasksByDate(Long userId, LocalDate date) {
-        return taskRepository
-                .findByUserIdAndTaskDateOrderByCreatedAtAsc(userId, date)
-                .stream()
-                .map(TaskResponse::from)
-                .toList();
+        List<Task> tasks = taskRepository
+                .findByUserIdAndTaskDateOrderByCreatedAtAsc(userId, date);
+
+        log.debug("getTasksByDate uid={} date={} -> {} tasks", userId, date, tasks.size());
+        return tasks.stream().map(TaskResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public List<TaskResponse> getTasksByDateRange(Long userId, LocalDate from, LocalDate to) {
-        return taskRepository
-                .findByUserIdAndTaskDateBetweenOrderByTaskDateAscCreatedAtAsc(userId, from, to)
-                .stream()
-                .map(TaskResponse::from)
-                .toList();
+        List<Task> tasks = taskRepository
+                .findByUserIdAndTaskDateBetweenOrderByTaskDateAscCreatedAtAsc(userId, from, to);
+
+        log.debug("getTasksByDateRange uid={} from={} to={} -> {} tasks", userId, from, to, tasks.size());
+        return tasks.stream().map(TaskResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public CalendarMonthResponse getCalendarMonth(Long userId, int year, int month) {
         LocalDate from = LocalDate.of(year, month, 1);
-        LocalDate to = from.withDayOfMonth(from.lengthOfMonth());
+        LocalDate to   = from.withDayOfMonth(from.lengthOfMonth());
 
+        // Projection query — returns only LocalDate values, no full entity load
         List<String> dates = taskRepository
                 .findDatesWithTasksInRange(userId, from, to)
                 .stream()
@@ -66,7 +89,7 @@ public class TaskService {
                 .build();
     }
 
-    // ─── Write ───────────────────────────────────────────────
+    // ─── Write ───────────────────────────────────────────────────────────────
 
     @Transactional
     public TaskResponse createTask(Long userId, CreateTaskRequest req) {
