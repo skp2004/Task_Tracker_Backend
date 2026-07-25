@@ -65,6 +65,8 @@ spring:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 0
+    repair-on-migrate: true
+    validate-on-migrate: false
 
   # SMTP Mail (Gmail)
   mail:
