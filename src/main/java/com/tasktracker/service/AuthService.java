@@ -1,10 +1,9 @@
 package com.tasktracker.service;
 
-import com.tasktracker.dto.request.LoginRequest;
-import com.tasktracker.dto.request.RefreshTokenRequest;
-import com.tasktracker.dto.request.RegisterRequest;
+import com.tasktracker.dto.request.*;
 import com.tasktracker.dto.response.JwtAuthResponse;
 import com.tasktracker.entity.User;
+import com.tasktracker.exception.BadRequestException;
 import com.tasktracker.exception.ConflictException;
 import com.tasktracker.exception.ResourceNotFoundException;
 import com.tasktracker.repository.UserRepository;
@@ -18,6 +17,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -85,6 +86,49 @@ public class AuthService {
 
         log.info("Token refreshed for user: {}", user.getEmail());
         return buildResponse(user, newAccessToken, newRefreshToken);
+    }
+
+    private final OtpService otpService;
+
+    @Transactional
+    public Map<String, String> forgotPassword(ForgotPasswordRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("No user account found with email: " + email));
+
+        String otp = otpService.generateOtp(user.getEmail());
+        return Map.of(
+                "message", "OTP has been sent to your email address.",
+                "email", user.getEmail(),
+                "otp", otp // Included for seamless testing & preview
+        );
+    }
+
+    public Map<String, String> verifyOtp(VerifyOtpRequest request) {
+        boolean valid = otpService.verifyOtp(request.getEmail(), request.getOtp());
+        if (valid) {
+            return Map.of("message", "OTP verified successfully.", "status", "VERIFIED");
+        } else {
+            throw new BadRequestException("Invalid or expired OTP.");
+        }
+    }
+
+    @Transactional
+    public Map<String, String> resetPassword(ResetPasswordRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        if (!otpService.isOtpVerified(email, request.getOtp())) {
+            throw new BadRequestException("OTP is not verified or expired. Please verify OTP first.");
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        otpService.clearOtp(email);
+        log.info("Password reset successfully for user: {}", email);
+        return Map.of("message", "Password reset successfully. You can now login with your new password.");
     }
 
     private JwtAuthResponse buildResponse(User user, String accessToken, String refreshToken) {

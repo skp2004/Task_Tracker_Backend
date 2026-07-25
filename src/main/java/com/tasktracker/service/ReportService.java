@@ -180,8 +180,11 @@ public class ReportService {
                 yRef[0] -= 18;
 
                 for (Task t : dayTasks) {
-                    // Check space before each task row (15px height)
-                    if (yRef[0] < MARGIN + 20) {
+                    boolean hasDesc = t.getDescription() != null && !t.getDescription().isBlank();
+                    float rowHeight = hasDesc ? 25f : 15f;
+
+                    // Check space before each task row
+                    if (yRef[0] < MARGIN + rowHeight + 5) {
                         cs.close();
                         cs = addNewPage(doc, fontBold, yRef);
                         alt = false;
@@ -189,7 +192,7 @@ public class ReportService {
 
                     if (alt) {
                         cs.setNonStrokingColor(0.98f, 0.98f, 0.98f);
-                        cs.addRect(MARGIN, yRef[0] - 3, PAGE_WIDTH - 2 * MARGIN, 13);
+                        cs.addRect(MARGIN, yRef[0] - (hasDesc ? 13 : 3), PAGE_WIDTH - 2 * MARGIN, rowHeight - 2);
                         cs.fill();
                     }
                     alt = !alt;
@@ -208,7 +211,20 @@ public class ReportService {
                     cs.showText(t.getCategory() != null ? t.getCategory() : "—");
                     cs.endText();
 
-                    yRef[0] -= 15;
+                    if (hasDesc) {
+                        String desc = t.getDescription().replaceAll("[\\r\\n]+", " ").trim();
+                        if (desc.length() > 65) {
+                            desc = desc.substring(0, 62) + "...";
+                        }
+                        cs.setNonStrokingColor(0.4f, 0.4f, 0.4f);
+                        cs.beginText();
+                        cs.setFont(fontOblique, 7);
+                        cs.newLineAtOffset(MARGIN + 85, yRef[0] - 6);
+                        cs.showText("Desc: " + desc);
+                        cs.endText();
+                    }
+
+                    yRef[0] -= rowHeight;
                 }
             }
 
