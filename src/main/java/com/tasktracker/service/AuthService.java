@@ -89,6 +89,7 @@ public class AuthService {
     }
 
     private final OtpService otpService;
+    private final EmailService emailService;
 
     @Transactional
     public Map<String, String> forgotPassword(ForgotPasswordRequest request) {
@@ -97,10 +98,11 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("No user account found with email: " + email));
 
         String otp = otpService.generateOtp(user.getEmail());
+        emailService.sendOtpEmail(user.getEmail(), otp);
+
         return Map.of(
-                "message", "OTP has been sent to your email address.",
-                "email", user.getEmail(),
-                "otp", otp // Included for seamless testing & preview
+                "message", "A 6-digit OTP code has been sent to your email address.",
+                "email", user.getEmail()
         );
     }
 

@@ -66,6 +66,20 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+  # SMTP Mail (Gmail)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SPRING_MAIL_USERNAME:shashwatpatel04@gmail.com}
+    password: ${SPRING_MAIL_PASSWORD:mizk akis efqm czxg}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
 # Springdoc / Swagger
 springdoc:
   api-docs:
