@@ -6,36 +6,32 @@ import com.tasktracker.dto.response.CalendarMonthResponse;
 import com.tasktracker.dto.response.TaskResponse;
 import com.tasktracker.entity.Task;
 import com.tasktracker.entity.User;
+import com.tasktracker.exception.BadRequestException;
 import com.tasktracker.exception.ResourceNotFoundException;
 import com.tasktracker.repository.TaskRepository;
 import com.tasktracker.repository.UserRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.hibernate.jpa.HibernateHints;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Task business logic.
+ * Task business logic with soft-delete (trash) support.
  *
- * <p>Performance notes:
+ * <p>Delete strategy:
  * <ul>
- *   <li>All reads use {@code readOnly = true} which tells Hibernate to skip
- *       dirty-checking, opens the connection on the virtual thread (no blocking),
- *       and lets the JDBC driver optimise cursor semantics.</li>
- *   <li>Write operations use {@code merge()} semantics via {@code save()} with
- *       batch_size=25 configured in application.yml — multiple saves in a loop
- *       are batched into a single round-trip.</li>
- *   <li>The {@code EntityManager} fetch-size hint is applied on list queries so
- *       the JDBC driver streams 50 rows per network round-trip instead of
- *       fetching every row in one giant packet.</li>
+ *   <li>{@code deleteTask} — soft-delete: sets {@code deletedAt = now()}, task moves to trash.</li>
+ *   <li>{@code restoreTask} — clears {@code deletedAt}, task comes back to active.</li>
+ *   <li>{@code permanentlyDeleteTask} — hard DELETE from DB, only works on trashed tasks.</li>
+ *   <li>{@code getTrashedTasks} — returns all tasks where {@code deletedAt IS NOT NULL}.</li>
  * </ul>
+ * The {@code @SQLRestriction("deleted_at IS NULL")} on the entity filters out trashed
+ * tasks from every normal JPA query automatically.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,9 +41,6 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
 
-    @PersistenceContext
-    private EntityManager em;
-
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE;
 
     // ─── Read ────────────────────────────────────────────────────────────────
@@ -56,7 +49,6 @@ public class TaskService {
     public List<TaskResponse> getTasksByDate(Long userId, LocalDate date) {
         List<Task> tasks = taskRepository
                 .findByUserIdAndTaskDateOrderByCreatedAtAsc(userId, date);
-
         log.debug("getTasksByDate uid={} date={} -> {} tasks", userId, date, tasks.size());
         return tasks.stream().map(TaskResponse::from).toList();
     }
@@ -65,7 +57,6 @@ public class TaskService {
     public List<TaskResponse> getTasksByDateRange(Long userId, LocalDate from, LocalDate to) {
         List<Task> tasks = taskRepository
                 .findByUserIdAndTaskDateBetweenOrderByTaskDateAscCreatedAtAsc(userId, from, to);
-
         log.debug("getTasksByDateRange uid={} from={} to={} -> {} tasks", userId, from, to, tasks.size());
         return tasks.stream().map(TaskResponse::from).toList();
     }
@@ -75,7 +66,6 @@ public class TaskService {
         LocalDate from = LocalDate.of(year, month, 1);
         LocalDate to   = from.withDayOfMonth(from.lengthOfMonth());
 
-        // Projection query — returns only LocalDate values, no full entity load
         List<String> dates = taskRepository
                 .findDatesWithTasksInRange(userId, from, to)
                 .stream()
@@ -132,12 +122,55 @@ public class TaskService {
         return TaskResponse.from(task);
     }
 
+    // ─── Soft-delete (Trash) ─────────────────────────────────────────────────
+
+    /** Soft-delete: moves task to trash by setting deletedAt timestamp. */
     @Transactional
     public void deleteTask(Long userId, Long taskId) {
-        if (!taskRepository.existsByIdAndUserId(taskId, userId)) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found with id: " + taskId));
+
+        if (!task.getUser().getId().equals(userId)) {
             throw new ResourceNotFoundException("Task not found with id: " + taskId);
         }
-        taskRepository.deleteById(taskId);
-        log.debug("Task deleted: id={} user={}", taskId, userId);
+
+        task.setDeletedAt(OffsetDateTime.now());
+        taskRepository.save(task);
+        log.debug("Task soft-deleted (trashed): id={} user={}", taskId, userId);
+    }
+
+    /** Returns all tasks that have been soft-deleted (in trash) for this user. */
+    @Transactional(readOnly = true)
+    public List<TaskResponse> getTrashedTasks(Long userId) {
+        return taskRepository.findTrashedByUserId(userId)
+                .stream()
+                .map(TaskResponse::from)
+                .toList();
+    }
+
+    /** Restore: clears deletedAt, task becomes active again. */
+    @Transactional
+    public TaskResponse restoreTask(Long userId, Long taskId) {
+        Task task = taskRepository.findAnyByIdAndUserId(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found in trash with id: " + taskId));
+
+        if (task.getDeletedAt() == null) {
+            throw new BadRequestException("Task is not in trash.");
+        }
+
+        task.setDeletedAt(null);
+        task = taskRepository.save(task);
+        log.debug("Task restored from trash: id={} user={}", taskId, userId);
+        return TaskResponse.from(task);
+    }
+
+    /** Permanently deletes a trashed task. Only works on tasks that are in trash. */
+    @Transactional
+    public void permanentlyDeleteTask(Long userId, Long taskId) {
+        int affected = taskRepository.permanentlyDelete(taskId, userId);
+        if (affected == 0) {
+            throw new ResourceNotFoundException("Task not found in trash with id: " + taskId);
+        }
+        log.debug("Task permanently deleted: id={} user={}", taskId, userId);
     }
 }

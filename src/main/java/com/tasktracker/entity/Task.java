@@ -4,12 +4,14 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "tt_tasks")
+@SQLRestriction("deleted_at IS NULL")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
@@ -52,4 +54,8 @@ public class Task {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    /** Soft-delete timestamp — NULL means active, non-null means trashed */
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 }

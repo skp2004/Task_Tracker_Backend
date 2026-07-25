@@ -21,6 +21,7 @@ public class TaskResponse {
     private String category;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
+    private OffsetDateTime deletedAt;
 
     public static TaskResponse from(Task task) {
         return TaskResponse.builder()
@@ -33,6 +34,7 @@ public class TaskResponse {
                 .category(task.getCategory())
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
+                .deletedAt(task.getDeletedAt())
                 .build();
     }
 }

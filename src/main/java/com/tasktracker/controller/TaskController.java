@@ -19,18 +19,19 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/tasks")
 @RequiredArgsConstructor
-@Tag(name = "Tasks", description = "Task CRUD and calendar endpoints")
+@Tag(name = "Tasks", description = "Task CRUD, calendar, and trash endpoints")
 @SecurityRequirement(name = "bearerAuth")
 public class TaskController {
 
     private final TaskService taskService;
 
     @GetMapping
-    @Operation(summary = "Get tasks for a specific date")
+    @Operation(summary = "Get active tasks for a specific date")
     public ResponseEntity<List<TaskResponse>> getTasksByDate(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
@@ -47,7 +48,7 @@ public class TaskController {
     }
 
     @GetMapping("/range")
-    @Operation(summary = "Get tasks for a date range")
+    @Operation(summary = "Get active tasks for a date range")
     public ResponseEntity<List<TaskResponse>> getTasksByRange(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -74,13 +75,40 @@ public class TaskController {
         return ResponseEntity.ok(taskService.updateTask(principal.getId(), id, request));
     }
 
+    // ─── Soft-Delete / Trash Endpoints ───────────────────────────────────────
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Delete a task")
+    @Operation(summary = "Soft-delete a task (moves to trash)")
     public ResponseEntity<Void> deleteTask(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long id) {
         taskService.deleteTask(principal.getId(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/trash")
+    @Operation(summary = "Get all trashed (soft-deleted) tasks")
+    public ResponseEntity<List<TaskResponse>> getTrashedTasks(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(taskService.getTrashedTasks(principal.getId()));
+    }
+
+    @PostMapping("/{id}/restore")
+    @Operation(summary = "Restore a task from trash")
+    public ResponseEntity<TaskResponse> restoreTask(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(taskService.restoreTask(principal.getId(), id));
+    }
+
+    @DeleteMapping("/{id}/permanent")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Permanently delete a trashed task (hard delete)")
+    public ResponseEntity<Void> permanentlyDeleteTask(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id) {
+        taskService.permanentlyDeleteTask(principal.getId(), id);
         return ResponseEntity.noContent().build();
     }
 }
