@@ -54,6 +54,25 @@ Swagger UI → http://localhost:8081/swagger-ui.html
 
 ---
 
+## ⚡ Troubleshooting Connection Pooler (`EMAXCONNSESSION`)
+
+If Render deployment fails with:
+`FATAL: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15`
+
+### Cause:
+Render perform zero-downtime (rolling) deployments where a **new container** starts up before the **old container** is shut down.
+If `maximum-pool-size` was set to 10:
+`10 (old instance) + 10 (new instance) = 20 connections > 15 max limit`
+
+### Solution:
+1. **Hikari Pool Sizing**: `maximum-pool-size` is configured to `4` in `application.yml` (and `minimum-idle: 1`, `initialization-fail-timeout: 30000`).
+   - `4 (old) + 4 (new) = 8 connections`, comfortably below Supabase's 15 connection cap.
+   - Java 21 Virtual Threads efficiently process concurrent requests with this small pool without thread starvation.
+2. **Supabase Direct Connection (Alternative)**:
+   - For direct database connection without PgBouncer session limits, use Supabase Direct Connection on port `5432` (`db.xxx.supabase.co:5432`) or Transaction mode Pooler with appropriate URL options.
+
+---
+
 ## 🔄 Rotating Credentials
 
 1. **Supabase DB password**: Supabase Dashboard → Project Settings → Database → Reset password → update on Render dashboard.

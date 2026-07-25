@@ -26,11 +26,13 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      # Supabase session pooler cap is 15 connections; keep below it.
-      # Virtual threads park instead of blocking, so fewer DB connections
-      # serve many more concurrent requests than platform threads could.
-      maximum-pool-size: 10
-      minimum-idle: 2
+      # Supabase session pooler cap is 15 connections; keep maximum-pool-size low (4)
+      # so Render zero-downtime deploys (old container + new container) never exceed 15 connections.
+      # Virtual threads park instead of blocking, so 4 DB connections comfortably serve
+      # hundreds of concurrent requests.
+      maximum-pool-size: 4
+      minimum-idle: 1
+      initialization-fail-timeout: 30000 # 30s retry window if pooler is temporarily busy during deploy
       connection-timeout: 20000       # 20 s: fail fast rather than queue forever
       idle-timeout: 300000            # 5 min: release idle connections promptly
       max-lifetime: 1800000           # 30 min: rotate before Supabase kills them
