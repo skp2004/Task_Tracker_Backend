@@ -91,8 +91,6 @@ public class TaskService {
                 .title(req.getTitle().trim())
                 .description(req.getDescription())
                 .taskDate(req.getTaskDate())
-                .priority(req.getPriority())
-                .status(req.getStatus())
                 .category(req.getCategory())
                 .build();
 
@@ -113,8 +111,6 @@ public class TaskService {
         if (req.getTitle() != null)       task.setTitle(req.getTitle().trim());
         if (req.getDescription() != null) task.setDescription(req.getDescription());
         if (req.getTaskDate() != null)    task.setTaskDate(req.getTaskDate());
-        if (req.getPriority() != null)    task.setPriority(req.getPriority());
-        if (req.getStatus() != null)      task.setStatus(req.getStatus());
         if (req.getCategory() != null)    task.setCategory(req.getCategory());
 
         task = taskRepository.save(task);

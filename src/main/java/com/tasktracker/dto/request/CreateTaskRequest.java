@@ -1,7 +1,5 @@
 package com.tasktracker.dto.request;
 
-import com.tasktracker.entity.Priority;
-import com.tasktracker.entity.TaskStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -20,10 +18,6 @@ public class CreateTaskRequest {
 
     @NotNull(message = "Task date is required")
     private LocalDate taskDate;
-
-    private Priority priority = Priority.MEDIUM;
-
-    private TaskStatus status = TaskStatus.TODO;
 
     @Size(max = 50, message = "Category must not exceed 50 characters")
     private String category;

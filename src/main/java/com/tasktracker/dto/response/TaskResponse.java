@@ -1,8 +1,6 @@
 package com.tasktracker.dto.response;
 
-import com.tasktracker.entity.Priority;
 import com.tasktracker.entity.Task;
-import com.tasktracker.entity.TaskStatus;
 import lombok.Builder;
 import lombok.Data;
 
@@ -16,8 +14,6 @@ public class TaskResponse {
     private String title;
     private String description;
     private LocalDate taskDate;
-    private Priority priority;
-    private TaskStatus status;
     private String category;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -29,8 +25,6 @@ public class TaskResponse {
                 .title(task.getTitle())
                 .description(task.getDescription())
                 .taskDate(task.getTaskDate())
-                .priority(task.getPriority())
-                .status(task.getStatus())
                 .category(task.getCategory())
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
