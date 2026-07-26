@@ -59,12 +59,12 @@ public class ReportService {
             case YEAR -> {
                 rangeFrom = LocalDate.of(year, 1, 1);
                 rangeTo   = LocalDate.of(year, 12, 31);
-                reportTitle = "Annual Task Report — " + year;
+                reportTitle = "Annual Task Report - " + year;
             }
             case MONTH -> {
                 rangeFrom = LocalDate.of(year, month, 1);
                 rangeTo   = rangeFrom.withDayOfMonth(rangeFrom.lengthOfMonth());
-                reportTitle = "Monthly Task Report — "
+                reportTitle = "Monthly Task Report - "
                         + rangeFrom.format(DateTimeFormatter.ofPattern("MMMM yyyy"));
             }
             default -> {
@@ -180,7 +180,7 @@ public class ReportService {
                 csRef[0].beginText();
                 csRef[0].setFont(fontBold, 7.5f);
                 csRef[0].newLineAtOffset(COL_DATE, yRef[0] + 4);
-                csRef[0].showText("▸  " + date.format(DISPLAY_DATE));
+                csRef[0].showText(">  " + date.format(DISPLAY_DATE));
                 csRef[0].endText();
 
                 yRef[0] -= 15;
@@ -256,7 +256,7 @@ public class ReportService {
             csRef[0].beginText();
             csRef[0].setFont(fontRegular, 7);
             csRef[0].newLineAtOffset(MARGIN, 22);
-            csRef[0].showText("TaskTracker — Confidential  |  "
+            csRef[0].showText("TaskTracker - Confidential  |  "
                     + from.format(DISPLAY_DATE) + " to " + to.format(DISPLAY_DATE));
             csRef[0].endText();
 
