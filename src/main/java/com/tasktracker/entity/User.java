@@ -35,6 +35,15 @@ public class User {
     @Column(name = "avatar_url", length = 512)
     private String avatarUrl;
 
+    @Column(name = "college_name", length = 255)
+    private String collegeName;
+
+    @Column(name = "department", length = 100)
+    private String department;
+
+    @Column(name = "designation", length = 100)
+    private String designation;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)

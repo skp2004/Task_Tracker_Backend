@@ -41,6 +41,9 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName().trim())
                 .phone(request.getPhone())
+                .collegeName(request.getCollegeName())
+                .department(request.getDepartment())
+                .designation(request.getDesignation())
                 .build();
 
         user = userRepository.save(user);
@@ -144,6 +147,9 @@ public class AuthService {
                 .phone(user.getPhone())
                 .avatarUrl(user.getAvatarUrl())
                 .role(user.getRole().name())
+                .collegeName(user.getCollegeName())
+                .department(user.getDepartment())
+                .designation(user.getDesignation())
                 .build();
     }
 }

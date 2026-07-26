@@ -15,4 +15,7 @@ public class JwtAuthResponse {
     private String phone;
     private String avatarUrl;
     private String role;
+    private String collegeName;
+    private String department;
+    private String designation;
 }

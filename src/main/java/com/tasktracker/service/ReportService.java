@@ -33,9 +33,17 @@ public class ReportService {
     private final UserRepository userRepository;
 
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd MMM yyyy");
-    private static final float MARGIN = 50f;
-    private static final float PAGE_WIDTH = PDRectangle.A4.getWidth();
-    private static final float PAGE_HEIGHT = PDRectangle.A4.getHeight();
+    private static final float MARGIN       = 40f;
+    private static final float PAGE_WIDTH   = PDRectangle.A4.getWidth();
+    private static final float PAGE_HEIGHT  = PDRectangle.A4.getHeight();
+    private static final float CONTENT_W    = PAGE_WIDTH - 2 * MARGIN;
+
+    // Column X positions (compact single-line layout)
+    // DATE(65) | TITLE(160) | STATUS(55) | DESCRIPTION(rest)
+    private static final float COL_DATE   = MARGIN + 2;
+    private static final float COL_TITLE  = MARGIN + 67;
+    private static final float COL_STATUS = MARGIN + 227;
+    private static final float COL_DESC   = MARGIN + 282;
 
     public enum ReportType { YEAR, MONTH, DATE_RANGE }
 
@@ -46,7 +54,6 @@ public class ReportService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // Compute date range based on report type
         LocalDate rangeFrom, rangeTo;
         String reportTitle;
 
@@ -74,182 +81,210 @@ public class ReportService {
         return buildPdf(user, reportTitle, rangeFrom, rangeTo, tasks);
     }
 
-    private byte[] buildPdf(User user, String reportTitle, LocalDate from, LocalDate to,
-                             List<Task> tasks) {
+    private byte[] buildPdf(User user, String reportTitle,
+                             LocalDate from, LocalDate to, List<Task> tasks) {
         try (PDDocument doc = new PDDocument();
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
-            // Group tasks by date
             Map<LocalDate, List<Task>> byDate = tasks.stream()
                     .collect(Collectors.groupingBy(Task::getTaskDate, LinkedHashMap::new, Collectors.toList()));
 
-            // Summary counts
-            long total = tasks.size();
-            long done = tasks.stream().filter(t -> t.getStatus() == TaskStatus.DONE).count();
+            long total      = tasks.size();
+            long done       = tasks.stream().filter(t -> t.getStatus() == TaskStatus.DONE).count();
             long inProgress = tasks.stream().filter(t -> t.getStatus() == TaskStatus.IN_PROGRESS).count();
-            long todo = tasks.stream().filter(t -> t.getStatus() == TaskStatus.TODO).count();
 
             PDType1Font fontBold    = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
             PDType1Font fontRegular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
             PDType1Font fontOblique = new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE);
 
-            // ── Page 1 ──────────────────────────────────────────────────
+            // ── Page 1 ───────────────────────────────────────────────────
             PDPage firstPage = new PDPage(PDRectangle.A4);
             doc.addPage(firstPage);
-
-            // Use a single-element array so we can reassign inside lambdas / loops
             PDPageContentStream[] csRef = { new PDPageContentStream(doc, firstPage) };
             PDPageContentStream cs = csRef[0];
             float[] yRef = { PAGE_HEIGHT - MARGIN };
 
-            // ── Header ──────────────────────────────────────────────────
-            cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
-            cs.addRect(0, PAGE_HEIGHT - 80, PAGE_WIDTH, 80);
+            // ── Banner (dark purple) ─────────────────────────────────────
+            cs.setNonStrokingColor(0.17f, 0.12f, 0.40f);
+            cs.addRect(0, PAGE_HEIGHT - 90, PAGE_WIDTH, 90);
             cs.fill();
 
+            // Report title
             cs.setNonStrokingColor(1f, 1f, 1f);
             cs.beginText();
-            cs.setFont(fontBold, 18);
-            cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 45);
+            cs.setFont(fontBold, 16);
+            cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 38);
             cs.showText(reportTitle);
             cs.endText();
 
+            // Generated date
             cs.beginText();
-            cs.setFont(fontRegular, 10);
-            cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 65);
-            cs.showText("Generated on " + LocalDate.now().format(DISPLAY_DATE));
+            cs.setFont(fontRegular, 9);
+            cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 55);
+            cs.showText("Generated: " + LocalDate.now().format(DISPLAY_DATE));
             cs.endText();
 
-            yRef[0] = PAGE_HEIGHT - 110;
+            // College name — bold, larger
+            String college = user.getCollegeName();
+            if (college != null && !college.isBlank()) {
+                cs.beginText();
+                cs.setFont(fontBold, 13);
+                cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - 74);
+                String collegeDisplay = college.length() > 80 ? college.substring(0, 77) + "..." : college;
+                cs.showText(collegeDisplay);
+                cs.endText();
+            }
 
-            // ── User Info ────────────────────────────────────────────────
-            cs.setNonStrokingColor(0f, 0f, 0f);
-            cs.beginText();
-            cs.setFont(fontBold, 11);
-            cs.newLineAtOffset(MARGIN, yRef[0]);
-            cs.showText("User: " + user.getFullName() + "   |   Email: " + user.getEmail()
-                    + (user.getPhone() != null ? "   |   Phone: " + user.getPhone() : ""));
-            cs.endText();
+            yRef[0] = PAGE_HEIGHT - 105;
 
-            yRef[0] -= 25;
-
-            // ── Summary Bar ──────────────────────────────────────────────
-            cs.setNonStrokingColor(0.95f, 0.95f, 0.95f);
-            cs.addRect(MARGIN, yRef[0] - 40, PAGE_WIDTH - 2 * MARGIN, 45);
+            // ── User Info bar ────────────────────────────────────────────
+            cs.setNonStrokingColor(0.93f, 0.93f, 0.97f);
+            cs.addRect(MARGIN, yRef[0] - 26, CONTENT_W, 30);
             cs.fill();
 
-            cs.setNonStrokingColor(0f, 0f, 0f);
+            cs.setNonStrokingColor(0.17f, 0.12f, 0.40f);
             cs.beginText();
-            cs.setFont(fontBold, 10);
-            cs.newLineAtOffset(MARGIN + 10, yRef[0] - 15);
-            cs.showText(String.format("Total: %d   |   Done: %d   |   In Progress: %d   |   To Do: %d",
-                    total, done, inProgress, todo));
+            cs.setFont(fontBold, 8.5f);
+            cs.newLineAtOffset(MARGIN + 6, yRef[0] - 12);
+            StringBuilder userLine = new StringBuilder();
+            userLine.append(user.getFullName());
+            if (user.getDepartment() != null && !user.getDepartment().isBlank())
+                userLine.append("  |  Dept: ").append(user.getDepartment());
+            if (user.getDesignation() != null && !user.getDesignation().isBlank())
+                userLine.append("  |  ").append(user.getDesignation());
+            userLine.append("  |  ").append(user.getEmail());
+            String ul = userLine.toString();
+            if (ul.length() > 105) ul = ul.substring(0, 102) + "...";
+            cs.showText(ul);
             cs.endText();
 
-            yRef[0] -= 65;
+            yRef[0] -= 40;
 
-            // ── Helper: draw column header row ───────────────────────────
+            // ── Summary counts ───────────────────────────────────────────
+            cs.setNonStrokingColor(0f, 0f, 0f);
+            cs.beginText();
+            cs.setFont(fontBold, 9);
+            cs.newLineAtOffset(MARGIN + 4, yRef[0]);
+            cs.showText(String.format("Total Tasks: %d     Done: %d     In Progress: %d", total, done, inProgress));
+            cs.endText();
+
+            yRef[0] -= 18;
+
+            // ── Column header row ────────────────────────────────────────
             drawTableHeader(cs, fontBold, yRef[0]);
-            yRef[0] -= 25;
+            yRef[0] -= 18;
 
-            // ── Task Rows ────────────────────────────────────────────────
+            // ── Task rows (compact single line per task) ─────────────────
             boolean alt = false;
             for (Map.Entry<LocalDate, List<Task>> entry : byDate.entrySet()) {
                 LocalDate date = entry.getKey();
-                List<Task> dayTasks = entry.getValue();
 
-                // Check space before drawing the day header (14px height)
-                if (yRef[0] < MARGIN + 30) {
+                // Date group separator
+                if (yRef[0] < MARGIN + 20) {
                     cs.close();
                     cs = addNewPage(doc, fontBold, yRef);
                     alt = false;
                 }
 
-                // Day header
                 cs.setNonStrokingColor(0.88f, 0.85f, 0.97f);
-                cs.addRect(MARGIN, yRef[0] - 3, PAGE_WIDTH - 2 * MARGIN, 14);
+                cs.addRect(MARGIN, yRef[0] - 2, CONTENT_W, 13);
                 cs.fill();
 
-                cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
+                cs.setNonStrokingColor(0.17f, 0.12f, 0.40f);
                 cs.beginText();
-                cs.setFont(fontBold, 8);
-                cs.newLineAtOffset(MARGIN + 5, yRef[0] + 4);
-                cs.showText(date.format(DISPLAY_DATE));
+                cs.setFont(fontBold, 7.5f);
+                cs.newLineAtOffset(COL_DATE, yRef[0] + 4);
+                cs.showText("▸  " + date.format(DISPLAY_DATE));
                 cs.endText();
 
-                yRef[0] -= 18;
+                yRef[0] -= 15;
 
-                for (Task t : dayTasks) {
-                    boolean hasDesc = t.getDescription() != null && !t.getDescription().isBlank();
-                    float rowHeight = hasDesc ? 25f : 15f;
+                for (Task t : entry.getValue()) {
+                    final float ROW_H = 13f;
 
-                    // Check space before each task row
-                    if (yRef[0] < MARGIN + rowHeight + 5) {
+                    if (yRef[0] < MARGIN + ROW_H + 4) {
                         cs.close();
                         cs = addNewPage(doc, fontBold, yRef);
                         alt = false;
                     }
 
+                    // Alternating row shading
                     if (alt) {
-                        cs.setNonStrokingColor(0.98f, 0.98f, 0.98f);
-                        cs.addRect(MARGIN, yRef[0] - (hasDesc ? 13 : 3), PAGE_WIDTH - 2 * MARGIN, rowHeight - 2);
+                        cs.setNonStrokingColor(0.97f, 0.97f, 0.99f);
+                        cs.addRect(MARGIN, yRef[0] - 2, CONTENT_W, ROW_H);
                         cs.fill();
                     }
                     alt = !alt;
 
-                    cs.setNonStrokingColor(0f, 0f, 0f);
+                    // Thin left accent line by status colour
+                    float[] sc = statusColor(t.getStatus());
+                    cs.setNonStrokingColor(sc[0], sc[1], sc[2]);
+                    cs.addRect(MARGIN, yRef[0] - 2, 3, ROW_H);
+                    cs.fill();
+
+                    // DATE column
+                    cs.setNonStrokingColor(0.35f, 0.35f, 0.35f);
                     cs.beginText();
-                    cs.setFont(fontRegular, 8);
-                    cs.newLineAtOffset(MARGIN + 85, yRef[0] + 4);
-                    String title = t.getTitle().length() > 38 ? t.getTitle().substring(0, 35) + "..." : t.getTitle();
-                    cs.showText(title);
-                    cs.newLineAtOffset(220, 0);
-                    cs.showText(t.getStatus().name());
-                    cs.newLineAtOffset(70, 0);
-                    cs.showText(t.getPriority().name());
-                    cs.newLineAtOffset(60, 0);
-                    cs.showText(t.getCategory() != null ? t.getCategory() : "—");
+                    cs.setFont(fontRegular, 7.5f);
+                    cs.newLineAtOffset(COL_DATE, yRef[0] + 3);
+                    cs.showText(date.format(DateTimeFormatter.ofPattern("dd/MM")));
                     cs.endText();
 
-                    if (hasDesc) {
+                    // TITLE column
+                    cs.setNonStrokingColor(0f, 0f, 0f);
+                    cs.beginText();
+                    cs.setFont(fontBold, 7.5f);
+                    cs.newLineAtOffset(COL_TITLE, yRef[0] + 3);
+                    String title = t.getTitle();
+                    if (title.length() > 30) title = title.substring(0, 27) + "...";
+                    cs.showText(title);
+                    cs.endText();
+
+                    // STATUS column
+                    cs.setNonStrokingColor(sc[0], sc[1], sc[2]);
+                    cs.beginText();
+                    cs.setFont(fontRegular, 7f);
+                    cs.newLineAtOffset(COL_STATUS, yRef[0] + 3);
+                    cs.showText(t.getStatus() == TaskStatus.IN_PROGRESS ? "In Progress" : "Done");
+                    cs.endText();
+
+                    // DESCRIPTION column
+                    if (t.getDescription() != null && !t.getDescription().isBlank()) {
                         String desc = t.getDescription().replaceAll("[\\r\\n]+", " ").trim();
-                        if (desc.length() > 65) {
-                            desc = desc.substring(0, 62) + "...";
-                        }
+                        int maxDescChars = 55;
+                        if (desc.length() > maxDescChars) desc = desc.substring(0, maxDescChars - 3) + "...";
                         cs.setNonStrokingColor(0.4f, 0.4f, 0.4f);
                         cs.beginText();
-                        cs.setFont(fontOblique, 7);
-                        cs.newLineAtOffset(MARGIN + 85, yRef[0] - 6);
-                        cs.showText("Desc: " + desc);
+                        cs.setFont(fontOblique, 7f);
+                        cs.newLineAtOffset(COL_DESC, yRef[0] + 3);
+                        cs.showText(desc);
                         cs.endText();
                     }
 
-                    yRef[0] -= rowHeight;
+                    yRef[0] -= ROW_H;
                 }
             }
 
             if (tasks.isEmpty()) {
                 cs.setNonStrokingColor(0.5f, 0.5f, 0.5f);
                 cs.beginText();
-                cs.setFont(fontOblique, 11);
+                cs.setFont(fontOblique, 10);
                 cs.newLineAtOffset(MARGIN, yRef[0]);
                 cs.showText("No tasks found for the selected period.");
                 cs.endText();
             }
 
-            // ── Footer on last page ──────────────────────────────────────
+            // ── Footer ───────────────────────────────────────────────────
             cs.setNonStrokingColor(0.6f, 0.6f, 0.6f);
             cs.beginText();
-            cs.setFont(fontRegular, 8);
-            cs.newLineAtOffset(MARGIN, 30);
-            cs.showText("TaskTracker — Confidential | " + from.format(DISPLAY_DATE) + " to " + to.format(DISPLAY_DATE));
+            cs.setFont(fontRegular, 7);
+            cs.newLineAtOffset(MARGIN, 22);
+            cs.showText("TaskTracker — Confidential  |  " + from.format(DISPLAY_DATE) + " to " + to.format(DISPLAY_DATE));
             cs.endText();
 
-            cs.close(); // close the last open stream
-
+            cs.close();
             doc.save(baos);
-            log.info("PDF report generated for user {} — {} tasks, {} pages",
-                    user.getId(), tasks.size(), doc.getNumberOfPages());
+            log.info("PDF report generated — user={} tasks={} pages={}", user.getId(), tasks.size(), doc.getNumberOfPages());
             return baos.toByteArray();
 
         } catch (IOException e) {
@@ -257,38 +292,44 @@ public class ReportService {
         }
     }
 
-    /** Opens a new page, resets y to top margin, redraws the column header row. */
-    private PDPageContentStream addNewPage(PDDocument doc, PDType1Font fontBold,
-                                           float[] yRef) throws IOException {
-        PDPage newPage = new PDPage(PDRectangle.A4);
-        doc.addPage(newPage);
-        PDPageContentStream newCs = new PDPageContentStream(doc, newPage);
-        yRef[0] = PAGE_HEIGHT - MARGIN;
-        drawTableHeader(newCs, fontBold, yRef[0]);
-        yRef[0] -= 25;
-        return newCs;
+    /** Colour for left status accent: Done=green, InProgress=blue, otherwise gray */
+    private float[] statusColor(TaskStatus s) {
+        return switch (s) {
+            case DONE        -> new float[]{0.13f, 0.76f, 0.37f};
+            case IN_PROGRESS -> new float[]{0.23f, 0.51f, 0.96f};
+            default          -> new float[]{0.7f,  0.7f,  0.7f};
+        };
     }
 
-    /** Draws the purple column header row at the given y position. */
-    private void drawTableHeader(PDPageContentStream cs, PDType1Font fontBold,
-                                  float y) throws IOException {
-        cs.setNonStrokingColor(0.24f, 0.18f, 0.56f);
-        cs.addRect(MARGIN, y - 5, PAGE_WIDTH - 2 * MARGIN, 20);
+    /** Opens a new page, resets y, redraws column header. */
+    private PDPageContentStream addNewPage(PDDocument doc, PDType1Font fontBold,
+                                           float[] yRef) throws IOException {
+        PDPage page = new PDPage(PDRectangle.A4);
+        doc.addPage(page);
+        PDPageContentStream cs = new PDPageContentStream(doc, page);
+        yRef[0] = PAGE_HEIGHT - MARGIN;
+        drawTableHeader(cs, fontBold, yRef[0]);
+        yRef[0] -= 18;
+        return cs;
+    }
+
+    /** Draws the purple column-header row. */
+    private void drawTableHeader(PDPageContentStream cs, PDType1Font fontBold, float y) throws IOException {
+        cs.setNonStrokingColor(0.17f, 0.12f, 0.40f);
+        cs.addRect(MARGIN, y - 3, CONTENT_W, 16);
         cs.fill();
 
         cs.setNonStrokingColor(1f, 1f, 1f);
         cs.beginText();
-        cs.setFont(fontBold, 9);
-        cs.newLineAtOffset(MARGIN + 5, y + 3);
+        cs.setFont(fontBold, 7.5f);
+        cs.newLineAtOffset(COL_DATE, y + 4);
         cs.showText("DATE");
-        cs.newLineAtOffset(80, 0);
+        cs.newLineAtOffset(COL_TITLE - COL_DATE, 0);
         cs.showText("TITLE");
-        cs.newLineAtOffset(220, 0);
+        cs.newLineAtOffset(COL_STATUS - COL_TITLE, 0);
         cs.showText("STATUS");
-        cs.newLineAtOffset(70, 0);
-        cs.showText("PRIORITY");
-        cs.newLineAtOffset(60, 0);
-        cs.showText("CATEGORY");
+        cs.newLineAtOffset(COL_DESC - COL_STATUS, 0);
+        cs.showText("DESCRIPTION");
         cs.endText();
     }
 }

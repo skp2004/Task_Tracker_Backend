@@ -49,6 +49,9 @@ public class UserController {
 
         user.setFullName(request.getFullName().trim());
         user.setPhone(request.getPhone());
+        if (request.getCollegeName() != null) user.setCollegeName(request.getCollegeName());
+        if (request.getDepartment() != null)  user.setDepartment(request.getDepartment());
+        if (request.getDesignation() != null) user.setDesignation(request.getDesignation());
 
         user = userRepository.save(user);
         return ResponseEntity.ok(UserProfileResponse.from(user));

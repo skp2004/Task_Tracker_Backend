@@ -15,6 +15,9 @@ public class UserProfileResponse {
     private String phone;
     private String avatarUrl;
     private String role;
+    private String collegeName;
+    private String department;
+    private String designation;
     private OffsetDateTime createdAt;
 
     public static UserProfileResponse from(User user) {
@@ -25,6 +28,9 @@ public class UserProfileResponse {
                 .phone(user.getPhone())
                 .avatarUrl(user.getAvatarUrl())
                 .role(user.getRole().name())
+                .collegeName(user.getCollegeName())
+                .department(user.getDepartment())
+                .designation(user.getDesignation())
                 .createdAt(user.getCreatedAt())
                 .build();
     }

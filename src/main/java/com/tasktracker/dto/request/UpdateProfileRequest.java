@@ -10,4 +10,7 @@ public class UpdateProfileRequest {
     private String fullName;
 
     private String phone;
+    private String collegeName;
+    private String department;
+    private String designation;
 }
