@@ -11,13 +11,14 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -86,9 +87,13 @@ public class ReportService {
 
             long total = tasks.size();
 
-            PDType1Font fontBold    = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-            PDType1Font fontRegular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-            PDType1Font fontOblique = new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE);
+            // Use embedded TrueType fonts (Noto Sans) to support full Unicode including
+            // Gujarati, Devanagari, Arabic, CJK, etc.  PDType1Font (Helvetica) only
+            // covers WinAnsiEncoding (Latin) and will throw IllegalArgumentException
+            // for any character outside that range.
+            PDType0Font fontBold    = loadFont(doc, "fonts/NotoSans-Bold.ttf");
+            PDType0Font fontRegular = loadFont(doc, "fonts/NotoSans-Regular.ttf");
+            PDType0Font fontOblique = loadFont(doc, "fonts/NotoSans-Italic.ttf");
 
             // ── Page 1 ──────────────────────────────────────────────────────
             PDPage firstPage = new PDPage(PDRectangle.A4);
@@ -123,7 +128,8 @@ public class ReportService {
                 csRef[0].beginText();
                 csRef[0].setFont(fontBold, 12);
                 csRef[0].newLineAtOffset(MARGIN, PAGE_HEIGHT - 66);
-                String c = college.length() > 85 ? college.substring(0, 82) + "..." : college;
+                String c = sanitizeText(college);
+                if (c.length() > 85) c = c.substring(0, 82) + "...";
                 csRef[0].showText(c);
                 csRef[0].endText();
             }
@@ -140,9 +146,10 @@ public class ReportService {
             csRef[0].beginText();
             csRef[0].setFont(fontBold, 8f);
             csRef[0].newLineAtOffset(MARGIN + 8, yRef[0] - 12);
-            String line1 = "Name: " + safe(user.getFullName())
-                    + "   |   Email: " + safe(user.getEmail())
-                    + (user.getPhone() != null && !user.getPhone().isBlank() ? "   |   Phone: " + user.getPhone() : "");
+            String line1 = "Name: " + sanitizeText(user.getFullName())
+                    + "   |   Email: " + sanitizeText(user.getEmail())
+                    + (user.getPhone() != null && !user.getPhone().isBlank()
+                       ? "   |   Phone: " + sanitizeText(user.getPhone()) : "");
             if (line1.length() > 115) line1 = line1.substring(0, 112) + "...";
             csRef[0].showText(line1);
             csRef[0].endText();
@@ -153,11 +160,11 @@ public class ReportService {
             csRef[0].newLineAtOffset(MARGIN + 8, yRef[0] - 25);
             StringBuilder line2Sb = new StringBuilder();
             if (user.getDepartment() != null && !user.getDepartment().isBlank())
-                line2Sb.append("Department: ").append(user.getDepartment()).append("   |   ");
+                line2Sb.append("Department: ").append(sanitizeText(user.getDepartment())).append("   |   ");
             if (user.getDesignation() != null && !user.getDesignation().isBlank())
-                line2Sb.append("Designation: ").append(user.getDesignation()).append("   |   ");
+                line2Sb.append("Designation: ").append(sanitizeText(user.getDesignation())).append("   |   ");
             if (user.getCollegeName() != null && !user.getCollegeName().isBlank())
-                line2Sb.append("College: ").append(user.getCollegeName());
+                line2Sb.append("College: ").append(sanitizeText(user.getCollegeName()));
             String line2 = line2Sb.toString().replaceAll("   \\|   $", "");
             if (line2.isBlank()) line2 = "User Account Details";
             if (line2.length() > 115) line2 = line2.substring(0, 112) + "...";
@@ -207,14 +214,14 @@ public class ReportService {
                 csRef[0].beginText();
                 csRef[0].setFont(fontBold, 7.5f);
                 csRef[0].newLineAtOffset(COL_TITLE, yRef[0] + 3);
-                String title = t.getTitle();
+                String title = sanitizeText(t.getTitle());
                 if (title.length() > 36) title = title.substring(0, 33) + "...";
                 csRef[0].showText(title);
                 csRef[0].endText();
 
                 // DESCRIPTION column
                 if (t.getDescription() != null && !t.getDescription().isBlank()) {
-                    String desc = t.getDescription().replaceAll("[\\r\\n]+", " ").trim();
+                    String desc = sanitizeText(t.getDescription()).replaceAll("[\\r\\n]+", " ").trim();
                     int maxChars = 72;
                     if (desc.length() > maxChars) desc = desc.substring(0, maxChars - 3) + "...";
                     csRef[0].setNonStrokingColor(0.35f, 0.35f, 0.35f);
@@ -257,10 +264,46 @@ public class ReportService {
     }
 
     private String safe(String input) {
-        return input != null ? input : "—";
+        return input != null ? input : "-";
     }
 
-    private PDPageContentStream addNewPage(PDDocument doc, PDType1Font fontBold,
+    /**
+     * Loads a TrueType font from the classpath and embeds it in the document.
+     * Using PDType0Font (composite font) instead of PDType1Font ensures full
+     * Unicode support, preventing IllegalArgumentException for non-Latin characters.
+     */
+    private PDType0Font loadFont(PDDocument doc, String classpathPath) throws IOException {
+        try (InputStream is = new ClassPathResource(classpathPath).getInputStream()) {
+            return PDType0Font.load(doc, is);
+        }
+    }
+
+    /**
+     * Sanitizes a string for safe PDF rendering.
+     * Replaces null with a dash, strips control characters, and replaces
+     * supplementary Unicode code points (surrogate pairs) with '?' which
+     * could otherwise cause encoding errors even with a Unicode font.
+     */
+    private String sanitizeText(String input) {
+        if (input == null) return "-";
+        StringBuilder sb = new StringBuilder(input.length());
+        for (int i = 0; i < input.length(); ) {
+            int cp = input.codePointAt(i);
+            if (cp < 0x20 && cp != 0x09) {
+                // Skip control characters except tab
+                sb.append(' ');
+            } else if (cp > 0xFFFF) {
+                // Surrogate pair / supplementary plane — replace with '?'
+                sb.append('?');
+            } else {
+                sb.appendCodePoint(cp);
+            }
+            i += Character.charCount(cp);
+        }
+        return sb.toString();
+    }
+
+    private PDPageContentStream addNewPage(PDDocument doc, PDType0Font fontBold,
                                            float[] yRef) throws IOException {
         PDPage page = new PDPage(PDRectangle.A4);
         doc.addPage(page);
@@ -271,7 +314,7 @@ public class ReportService {
         return cs;
     }
 
-    private void drawTableHeader(PDPageContentStream cs, PDType1Font fontBold, float y) throws IOException {
+    private void drawTableHeader(PDPageContentStream cs, PDType0Font fontBold, float y) throws IOException {
         cs.setNonStrokingColor(0.15f, 0.12f, 0.38f);
         cs.addRect(MARGIN, y - 3, CONTENT_W, 16);
         cs.fill();
